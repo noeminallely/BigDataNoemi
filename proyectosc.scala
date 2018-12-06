@@ -14,18 +14,18 @@ import org.apache.spark.ml.Pipeline
 import org.apache.spark.ml.feature.IndexToString
 import org.apache.spark.ml.classification.LogisticRegression
 import org.apache.spark.ml.classification.LinearSVC
+
+//Prevenir errores.
 import org.apache.log4j._
 Logger.getLogger("org").setLevel(Level.ERROR)
-
-//Se Crea una simple sesion es spark.
+//Crear una simple sesion es spark.
 val spark = SparkSession.builder().getOrCreate()
-//Leer el Dataset
-val dataSet = spark.read.option("header", true).option("inferSchema", "true").option("delimiter", ";").csv("bank-full.csv")
+//Leer el Dataset.
+val dt = spark.read.option("header", true).option("inferSchema", "true").option("delimiter", ";").csv("bank-full.csv")
 
-//Limpieza de datos 
+//Reemplazar los datos
 
 import org.apache.spark.ml.feature.StringIndexer
-
 val df2 = dt.withColumn("label", when(col("y") === "yes", 1).otherwise(2))
 
 val indexer = new StringIndexer().setInputCol("age").setOutputCol("InAge").fit(df2).transform(df2)
@@ -39,19 +39,33 @@ val indexer7= new StringIndexer().setInputCol("pdays").setOutputCol("InPdays").f
 val indexer8 = new StringIndexer().setInputCol("previous").setOutputCol("InPrevious").fit(indexer7).transform(indexer7)
 val indexer9 = new StringIndexer().setInputCol("poutcome").setOutputCol("InPoutcome").fit(indexer8).transform(indexer8)
 
-//-- Convertirlo en vector.
+
 import org.apache.spark.ml.feature.VectorAssembler
 import org.apache.spark.ml.linalg.Vectors
 
 val assembler = new VectorAssembler().setInputCols(Array("balance","day","duration","pdays","previous", "InAge", "InJob", "InMarital", "InEducation",
-"InDefault", "InHousing", "InLoan", "InPdays", "InPrevious", "InPoutcome")).setOutputCol("caracteristicas")
+"InDefault", "InHousing", "InLoan", "InPdays", "InPrevious", "InPoutcome")).setOutputCol("features")
 val output = assembler.transform(indexer9)
-val data = output.select("label","caracteristicas")
+val data = output.select("label","features")
+data.show(50,false)
 
-//-------------------------------Multilayer Perceptron Classifier. ---------------------------------------///
+// // normalizar para que esten mas cercas los datos
+// import org.apache.spark.ml.feature.Normalizer
+// import org.apache.spark.ml.linalg.Vectors
+// val normalizer = new Normalizer().setInputCol("caracteristicas").setOutputCol("features").setP(1.0)
+//
+// val l1NormData = normalizer.transform(data)
+// println("Normalized using L^1 norm")
+// l1NormData.show(50)
+//
+// val df = l1NormData.select("label","features")
+// df.show(false)
+
+
+//////////////////// Multilayer Perceptron Classifier. ////////////////////////
 import org.apache.spark.ml.classification.MultilayerPerceptronClassifier
 import org.apache.spark.ml.evaluation.MulticlassClassificationEvaluator
-val splits = df.randomSplit(Array(0.6, 0.4), seed = 1234L)
+val splits = data.randomSplit(Array(0.6, 0.4), seed = 1234L)
 val train = splits(0)
 val test = splits(1)
 
@@ -67,11 +81,11 @@ val evaluator = new MulticlassClassificationEvaluator().setMetricName("accuracy"
 println(s"Test set accuracy = ${evaluator.evaluate(predictionAndLabels)}")
 
 
-///----------------------------------------SVM--------------------------------------------------------//
+///////////////////////SVM//////////////////////////
 import org.apache.spark.ml.classification.LinearSVC
 
-val data = df.withColumn("abel2",when(col("label") === 1,1).otherwise(col("label")))
-val data2 = data.withColumn("label",when(col("label") === 2,0).otherwise(col("label")))
+val datas = data.withColumn("abel2",when(col("label") === 1,1).otherwise(col("label")))
+val data2 = datas.withColumn("label",when(col("label") === 2,0).otherwise(col("label")))
 val df3 = data2.withColumn("label",'label.cast("Int"))
 df3.show()
 val lsvc = new LinearSVC()
@@ -84,11 +98,11 @@ val lsvcModel = lsvc.fit(df3)
 // Print the coefficients and intercept for linear svc
 println(s"Coefficients: ${lsvcModel.coefficients} Intercept: ${lsvcModel.intercept}")
 
-///---------------------------------- logistic Regression --------------------------------------------------------///
+/////////////// logistic Regression ////////////////////
 import org.apache.spark.ml.classification.LogisticRegression
 val lr = new LogisticRegression().setMaxIter(10).setRegParam(0.3).setElasticNetParam(0.8)
 // Fit the model
-val lrModel = lr.fit(df)
+val lrModel = lr.fit(data)
 // Print the coefficients and intercept for logistic regression
 println(s"Multinomial coefficients: ${lrModel.coefficientMatrix}")
 
@@ -106,7 +120,7 @@ println(s"Multinomial coefficients: ${mlrModel.coefficientMatrix}")
 println(s"Multinomial intercepts: ${mlrModel.interceptVector}")
 
 
-///-------------------------------------------  Decision Three  --------------------------------------------------///
+////////////////////////////  Decision Three  ////////////////////////
 
 
 import org.apache.spark.ml.classification.DecisionTreeClassificationModel
